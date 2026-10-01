@@ -46,24 +46,20 @@ class RotaryEmbedding(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(
-        self,
-        hidden_size: int,
-        num_heads: int,
-        num_kv_heads: int,
-        head_dim: int,
-    ):
+    def __init__(self, config: dict):
         super().__init__()
-        self.num_heads = num_heads
-        self.num_kv_heads = num_kv_heads
-        self.head_dim = head_dim
-        self.q_proj = nn.Linear(hidden_size, num_heads * head_dim, bias=False)
-        self.k_proj = nn.Linear(hidden_size, num_kv_heads * head_dim, bias=False)
-        self.v_proj = nn.Linear(hidden_size, num_kv_heads * head_dim, bias=False)
-        self.o_proj = nn.Linear(num_heads*head_dim, hidden_size, bias=False)
-        self.q_norm = RMSNorm(self.head_dim)
-        self.k_norm = RMSNorm(self.head_dim)
-        self.rope = RotaryEmbedding(self.head_dim)
+        hidden_size = config["hidden_size"]
+        self.num_heads = num_heads = config["num_attention_heads"]
+        self.num_kv_heads = num_kv_heads = config["num_key_value_heads"]
+        self.head_dim = head_dim = config["head_dim"]
+        attention_bias = config["attention_bias"]
+        self.q_proj = nn.Linear(hidden_size, num_heads * head_dim, bias=attention_bias)
+        self.k_proj = nn.Linear(hidden_size, num_kv_heads * head_dim, bias=attention_bias)
+        self.v_proj = nn.Linear(hidden_size, num_kv_heads * head_dim, bias=attention_bias)
+        self.o_proj = nn.Linear(num_heads*head_dim, hidden_size, bias=attention_bias)
+        self.q_norm = RMSNorm(self.head_dim, eps=config["rms_norm_eps"])
+        self.k_norm = RMSNorm(self.head_dim, eps=config["rms_norm_eps"])
+        self.rope = RotaryEmbedding(self.head_dim, rope_theta=config["rope_theta"])
 
     def forward(self, x: torch.Tensor, positions: torch.Tensor):
         """输入 x [B,T,H] 和 positions [T]，返回 [B,T,H]。"""
@@ -102,30 +98,3 @@ class Attention(nn.Module):
 
         res = res.transpose(1,2).reshape(B,T,self.num_heads * self.head_dim)
         return self.o_proj(res)
-
-
-if __name__ == "__main__":
-    torch.manual_seed(0)
-    attention = Attention(hidden_size=12, num_heads=4, num_kv_heads=2, head_dim=4)
-    x = torch.randn(2, 3, 12)
-    positions = torch.arange(x.shape[1])
-
-    with torch.inference_mode():
-        original_output = attention(x, positions)
-
-        # 只改变最后一个 token，保留原输入和同一份模型权重。
-        changed_x = x.clone()
-        changed_x[:, -1, :] += 10.0
-        changed_output = attention(changed_x, positions)
-
-    # 前两个位置不能看到最后一个 token，因此输出应保持不变。
-    earlier_difference = (
-        original_output[:, :-1, :] - changed_output[:, :-1, :]
-    ).abs().max().item()
-    last_difference = (
-        original_output[:, -1, :] - changed_output[:, -1, :]
-    ).abs().max().item()
-
-    print("输出形状：", original_output.shape)
-    print("前两个位置的最大差异（预期为 0）：", earlier_difference)
-    print("最后一个位置的最大差异（允许变化）：", last_difference)

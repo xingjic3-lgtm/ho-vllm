@@ -31,17 +31,3 @@ class MLP(nn.Module):
         hidden = F.silu(gate) * up
         return self.down_proj(hidden)
 
-
-if __name__ == "__main__":
-    torch.manual_seed(0)
-    x = torch.randn(1, 3, 4)
-    norm = RMSNorm(hidden_size=4)
-    mlp = MLP(hidden_size=4, intermediate_size=8)
-
-    with torch.inference_mode():
-        normalized = norm(x)  # 填空 2：调用 norm 处理 x。
-        output = x + mlp(normalized)  # 填空 3：normalized 经过 mlp，结果与原始 x 相加。
-
-    print("输入形状：", x.shape)
-    print("输出形状：", output.shape)
-    print("输出：", output)

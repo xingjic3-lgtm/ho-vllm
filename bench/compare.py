@@ -1,8 +1,11 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 from learn_vllm.model.loader import load_weight
+from learn_vllm.config import load_config
 
 model_path = "/root/huggingface/Qwen3-0.6B"
+model_config = load_config(model_path)
+dtype = getattr(torch, model_config.get("dtype") or model_config["torch_dtype"])
 text = "你好，请介绍一下自己。"
 max_new_tokens = 100
 seed = 0
@@ -10,7 +13,7 @@ torch.manual_seed(seed)
 
 
 tokenizer = AutoTokenizer.from_pretrained(model_path,local_files_only=True,)
-model = AutoModelForCausalLM.from_pretrained(model_path,torch_dtype=torch.float16,local_files_only=True,).to("cuda")
+model = AutoModelForCausalLM.from_pretrained(model_path,torch_dtype=dtype,local_files_only=True,).to("cuda")
 model.eval()
 
 
@@ -35,7 +38,7 @@ print("生成结果：" + tokenizer.decode(input_ids[0]))
 
 
 
-model_ours = load_weight().to(dtype = torch.float16)
+model_ours = load_weight(model_path, dtype=dtype, config=model_config)
 tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True, )
 inputs = tokenizer(text, return_tensors="pt")
 inputs_ids = inputs["input_ids"].to("cuda")
@@ -133,4 +136,3 @@ print(
     "Top-1一致：",
     baseline_ids[0, 0].item() == ours_ids[0, 0].item()
 )
-
