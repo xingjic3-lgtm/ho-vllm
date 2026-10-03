@@ -46,7 +46,7 @@ class RotaryEmbedding(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, layer_id: int):
         super().__init__()
         hidden_size = config["hidden_size"]
         self.num_heads = num_heads = config["num_attention_heads"]
@@ -60,6 +60,7 @@ class Attention(nn.Module):
         self.q_norm = RMSNorm(self.head_dim, eps=config["rms_norm_eps"])
         self.k_norm = RMSNorm(self.head_dim, eps=config["rms_norm_eps"])
         self.rope = RotaryEmbedding(self.head_dim, rope_theta=config["rope_theta"])
+        self.layer_id = layer_id
 
     def forward(self, x: torch.Tensor, positions: torch.Tensor):
         """输入 x [B,T,H] 和 positions [T]，返回 [B,T,H]。"""
@@ -81,6 +82,11 @@ class Attention(nn.Module):
         Q = self.rope(Q, positions)
         K = self.rope(K, positions)
 
+        block_id = positions // block_size   # 逻辑blockid   
+        block_physical_id = get_physical(blockid)    # 得到物理blockid
+        offset = positions.shape % block_size
+        kv_cache[0, self.layer_id, block_physical_id, offset ] = K[0, :, 0, :]
+        kv_cache[1, self.layer_id, block_physical_id, offset ] = V[0, :, 0, :]
 
         repeat = self.num_heads // self.num_kv_heads
         K = K.repeat_interleave(repeat,dim=1)
@@ -98,3 +104,10 @@ class Attention(nn.Module):
 
         res = res.transpose(1,2).reshape(B,T,self.num_heads * self.head_dim)
         return self.o_proj(res)
+
+
+class BlockManager():
+    def allocate():
+
+class Block():
+    
