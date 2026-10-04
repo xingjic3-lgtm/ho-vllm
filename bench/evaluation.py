@@ -3,6 +3,7 @@ import torch
 from learn_vllm.model.loader import load_weight
 from learn_vllm.config import load_config
 
+# 本文件为模型自实现模型推理的准确性测试    使用logits 数值误差、Top-K对来观测自实现模型是否能正确推理
 model_path = "/root/huggingface/Qwen3-0.6B"
 model_config = load_config(model_path)
 dtype = getattr(torch, model_config.get("dtype") or model_config["torch_dtype"])

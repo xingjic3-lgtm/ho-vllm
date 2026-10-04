@@ -7,17 +7,17 @@ import torch
 from .config import load_config
 from .engine import Engine
 from .sampler import SamplingParams
-
+import os
 
 def main():
     torch.manual_seed(0)
-    model_path = "/root/huggingface/Qwen3-0.6B"
+    model_path = os.environ.get("QWEN3_MODEL_PATH", "/home/chen/projects/dzyy-vllm-local/models/Qwen3-0.6B")
     config = load_config(model_path)
     params = SamplingParams(
         temperature=0.0,
         top_k=50,
         top_p=0.8,
-        max_tokens=10,
+        max_tokens=30,
     )
     text = "你好，请介绍一下自己。"
 
