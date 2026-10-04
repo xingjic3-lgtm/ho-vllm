@@ -17,30 +17,28 @@ class RotaryEmbedding(nn.Module):
         self.rope_theta = rope_theta
 
     def forward(self, x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
-        # positions：[T]，允许从非零位置开始。
+        # x: [B, H, T, D]
+        # positions: [B, T]
+
         positions = positions.to(device=x.device, dtype=torch.float32)
-        pair_indices = torch.arange(
-            self.head_dim // 2, device=x.device, dtype=torch.float32
-        )
-        inv_freq = self.rope_theta ** (-2 * pair_indices / self.head_dim)
+        pair_indices = torch.arange(self.head_dim // 2, device=x.device, dtype=torch.float32)
+        inv_freq = self.rope_theta ** (-2 * pair_indices / self.head_dim)  # [D/2]
 
-        # 空 1：每个位置乘上每个频率，得到 [T, D/2] 的角度表。
-        angles = positions[:,None]*inv_freq[None,:]   # [positions, pairindex]
-
-        # 前两维长度为 1，让所有请求、所有头共享同一张角度表。
-        cos = angles.cos()[None, None, :, :]    # 每个数cos
-        sin = angles.sin()[None, None, :, :]    # 每个数sin
-
-        # 前后半段对应元素成对旋转，计算暂用 float32。
+        # [B,T,1] * [1,1,D/2]
+        # -> [B,T,D/2]
+        angles = positions[:, :, None] * inv_freq[None, None, :]
+        # 给 head 这一维留出来
+        # -> [B,1,T,D/2]
+        cos = angles.cos()[:, None, :, :]
+        sin = angles.sin()[:, None, :, :]
         half = self.head_dim // 2
-        a = x[..., :half].float()
-        b = x[..., half:].float()
 
-        # 空 2、3：根据二维旋转公式，求新的前半段和后半段。
+        a = x[..., :half].float()   # [B,H,T,D/2]
+        b = x[..., half:].float()   # [B,H,T,D/2]
+
         rotated_a = a * cos - b * sin
         rotated_b = a * sin + b * cos
 
-        # 空 4：按前半段、后半段的顺序拼回完整的最后一维。
         rotated = torch.cat([rotated_a, rotated_b], dim=-1)
         return rotated.to(x.dtype)
 
@@ -62,7 +60,7 @@ class Attention(nn.Module):
         self.rope = RotaryEmbedding(self.head_dim, rope_theta=config["rope_theta"])
         self.layer_id = layer_id
 
-    def forward(self, x: torch.Tensor, positions: torch.Tensor):
+    def forward(self, x: torch.Tensor, positions: torch.Tensor, mask: torch.Tensor):
         """输入 x [B,T,H] 和 positions [T]，返回 [B,T,H]。"""
         q = self.q_proj(x)   # [B,T,head_dim*num_heads]
         k = self.k_proj(x)   # [B,T,head_dim*num_kv_heads]
@@ -82,32 +80,22 @@ class Attention(nn.Module):
         Q = self.rope(Q, positions)
         K = self.rope(K, positions)
 
-        block_id = positions // block_size   # 逻辑blockid   
-        block_physical_id = get_physical(blockid)    # 得到物理blockid
-        offset = positions.shape % block_size
-        kv_cache[0, self.layer_id, block_physical_id, offset ] = K[0, :, 0, :]
-        kv_cache[1, self.layer_id, block_physical_id, offset ] = V[0, :, 0, :]
 
         repeat = self.num_heads // self.num_kv_heads
         K = K.repeat_interleave(repeat,dim=1)
         V = V.repeat_interleave(repeat,dim=1)
+
         # softmax(（Q @ Kt）/ 厂d + M) V   这里M掩码对于需要掩住的地方是-∞不掩住的是0   why：-∞+qk结果=-∞   e的-∞ == 0
-        M = torch.triu(
-            torch.full((T, T), float("-inf"), device=Q.device, dtype=Q.dtype),
-            diagonal=1,
-        )
+        attn_M = torch.full((B,T,T), float("-inf"), device=Q.device, dtype=Q.dtype)
+        for i in range(B):
+            n = mask[i].sum().item()
+            for j in range(n):
+                attn_M[i, j, :j+1] = 0
+            # padding中的query全是-inf去与Q相加之后就是-inf，到后面做softmax的时候 分母全是e的负无穷次方都是0相加会NaN
+            attn_M[i, n:, :] = 0
+        
         d_sqrt = math.sqrt(self.head_dim)     
-        res = F.softmax(
-            (Q @ K.transpose(2,3))/d_sqrt + M,  
-            dim=-1
-            )@V
+        res = F.softmax((Q @ K.transpose(2,3))/d_sqrt + attn_M[:, None, :, :], dim=-1)@V
 
         res = res.transpose(1,2).reshape(B,T,self.num_heads * self.head_dim)
         return self.o_proj(res)
-
-
-class BlockManager():
-    def allocate():
-
-class Block():
-    

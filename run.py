@@ -3,11 +3,20 @@
 从仓库根目录运行：python -m learn_vllm.run
 """
 import torch
+import os
+import sys
+from pathlib import Path
+
+# Allow both ``python -m learn-vllm.run`` and ``python /path/to/run.py``.
+if __package__ in (None, ""):
+    package_dir = Path(__file__).resolve().parent
+    sys.path.insert(0, str(package_dir.parent))
+    __package__ = package_dir.name
 
 from .config import load_config
 from .engine import Engine
 from .sampler import SamplingParams
-import os
+
 
 def main():
     torch.manual_seed(0)
