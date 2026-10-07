@@ -5,9 +5,15 @@ from transformers import AutoTokenizer
 from .model.loader import load_weight
 from .sampler import Sampler, SamplingParams
 from collections import deque
+from .kv_cache_manager import KVCacheManager
+from .scheduler import Request, Scheduler
+from .model_runner import ModelRunner
 
 engine_config = {
-    "max_running_requests": 4,
+    "num_blocks": 256,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 256,
 }
 
 
@@ -17,125 +23,92 @@ class Engine:
         self.device = torch.device(device)
         self.dtype = getattr(torch, config.get("dtype") or config["torch_dtype"])
         self.eos_token_id = config["eos_token_id"]
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_path, local_files_only=True
-        )
-        self.model = load_weight(
-            model_path, config, self.device, self.dtype
-        )
-        self.sampler = Sampler()
-        self.scheduler = Scheduler(engine_config["max_running_requests"])
 
-    def add_request(self, prompt, sampling_params):
-        inputs = self.tokenizer(prompt, return_tensors='pt')
-        request = Request(inputs["input_ids"][0], sampling_params)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True)
+    
+        self.model = load_weight(model_path, config, self.device, self.dtype)
+        self.sampler = Sampler()
+
+        self.kv_cache_manager = KVCacheManager(
+            num_blocks=engine_config["num_blocks"],
+            block_size=engine_config["block_size"],
+        )
+
+        self.scheduler = Scheduler(
+            kv_cache_manager=self.kv_cache_manager,
+            max_num_seqs=engine_config["max_num_seqs"],
+            max_num_batched_tokens=engine_config["max_num_batched_tokens"],
+        )
+
+        self.model_runner = ModelRunner(
+            model=self.model,
+            kv_cache_manager=self.kv_cache_manager,
+            config=config,
+            device=self.device,
+            dtype=self.dtype,
+        )
+        self.next_request_id = 0
+
+    def add_request(self, prompt: str, sampling_params: SamplingParams) -> Request:
+        inputs = self.tokenizer(prompt, return_tensors="pt")
+        prompt_token_ids = inputs["input_ids"][0].tolist()
+
+        request = Request(
+            request_id=self.next_request_id,
+            prompt_token_ids=prompt_token_ids,
+            sampling_params=sampling_params,
+        )
+
+        self.next_request_id += 1
         self.scheduler.add_request(request)
+
         return request
 
-    def run(self):
-        while (self.scheduler.waiting_requests or self.scheduler.running_requests ):
+    def run(self) -> None:
+        while self.scheduler.waiting or self.scheduler.running:
             self.step()
 
-    def step(self, ):
-        requests = self.scheduler.schedule()
-        if not requests:
+    def step(self) -> None:
+        scheduler_output = self.scheduler.schedule()
+
+        if not scheduler_output.scheduled_requests:
             return
-        self.execute(requests)
 
-    def execute(self, requests):
-        max_requestlen = 0
-        for request in requests:
-            if request.num_tokens > max_requestlen:
-                max_requestlen = request.num_tokens
+        model_input = self.model_runner.prepare_inputs(scheduler_output)
+        logits = self.model_runner.execute_model(model_input)
 
-        B = len(requests)
+        finished_requests = []
+        logit_index = 0
 
-        batch = torch.full((B, max_requestlen), self.tokenizer.pad_token_id, device=self.device, dtype=requests[0].token_ids.dtype)    # 初始化先填充一个pad的矩阵  后面再用索引batch[i, :num_tokens]覆盖填入
-        mask = torch.zeros((B, max_requestlen), device=self.device, dtype=torch.bool)
-        positions = torch.zeros((B, max_requestlen), device=self.device, dtype=torch.long)
-        for i in range(B):
-            n = requests[i].num_tokens
-            batch[i, :n] = requests[i].token_ids.to(self.device)
-            mask[i, :n] = True
-            positions[i, :n] =  torch.arange(n, device=self.device)
+        for request in scheduler_output.scheduled_requests:
+            request_id = request.request_id
+            num_scheduled_tokens = scheduler_output.num_scheduled_tokens[request_id]
 
+            reaches_sequence_end = request.num_computed_tokens + num_scheduled_tokens == request.num_tokens
 
-        with torch.inference_mode():
-            outputs = self.model(batch, positions, mask)
+            request.num_computed_tokens += num_scheduled_tokens
 
-        filished_requests = []
-        for i,request in enumerate(requests):
-            logits = outputs[i, request.num_tokens - 1 ,:]
-            next_token = self.sampler.sample(logits, request.sampling_params)
-            request.token_ids = torch.cat([request.token_ids, next_token.cpu()])
-            request.generated_tokens += 1 
+            if not reaches_sequence_end:
+                continue
 
-            # 判断request是否结束
-            if (next_token == self.tokenizer.eos_token_id or request.generated_tokens >= request.max_tokens):
-                filished_requests.append(request)
+            next_token = self.sampler.sample(
+                logits[logit_index:logit_index + 1],
+                request.sampling_params,
+            )
+            logit_index += 1
 
-        self.scheduler.remove_requests(filished_requests)
+            token_id = next_token.item()
+            request.append_output_token(token_id)
 
-    # 第一版的benchmark测试用        
-    def generate(self, prompt: str, sampling_params: SamplingParams):
-        inputs = self.tokenizer(prompt, return_tensors="pt")
-        input_ids = inputs["input_ids"].to(self.device)
+            if token_id == self.eos_token_id:
+                finished_requests.append(request)
+                continue
 
-        for step in range(sampling_params.max_tokens):
-            with torch.inference_mode():
-                if input_ids.shape[1] >= self.config["max_position_embeddings"]:
-                    break
-                B, T = input_ids.shape
+            if request.num_output_tokens >= request.sampling_params.max_tokens:
+                finished_requests.append(request)
+                continue
 
-                # 单 request，没有 padding，全部都是真实 token
-                mask = torch.ones((B, T), device=self.device, dtype=torch.bool)
-
-                # [B,T]
-                positions = torch.arange( T, device=self.device)[None, :]
-
-                output = self.model( input_ids, positions, mask, )
-
-                logits = output[:, -1, :]
-                next_token = self.sampler.sample(logits, sampling_params)
-
-                input_ids = torch.cat([input_ids, next_token], dim=-1 )
-
-                if next_token.item() == self.eos_token_id:
-                    break
-            yield self.tokenizer.decode(input_ids[0])
-
-
-class Request:
-    def __init__(self, token_ids:torch.Tensor, sampling_params:SamplingParams):
-        self.token_ids = token_ids
-        # self.block_ids = []
-        self.max_tokens = sampling_params.max_tokens
-        self.generated_tokens = 0
-        self.sampling_params = sampling_params
-
-    @property
-    def num_tokens(self):
-        return self.token_ids.shape[-1]
-        
-
-    # def append_block(self, block:Block):
-    #     self.block_ids.append(block)
-
-class Scheduler:
-    def __init__(self, max_running_requests:int):
-        self.running_requests = []
-        self.waiting_requests = deque()   # 先进先出
-        self.max_running_requests = max_running_requests
-
-    def add_request(self, request:Request):
-        self.waiting_requests.append(request)
-
-    def schedule(self,):
-        while (len(self.running_requests) < self.max_running_requests and self.waiting_requests):
-            request = self.waiting_requests.popleft()
-            self.running_requests.append(request)
-        return self.running_requests
-
-    def remove_requests(self, requests:list):
-        for request in requests:
-            self.running_requests.remove(request)
+            if request.num_tokens >= self.config["max_position_embeddings"]:
+                finished_requests.append(request)
+        for request in finished_requests:
+            self.scheduler.finish_request(request)
