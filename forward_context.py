@@ -6,11 +6,12 @@ import torch
 
 @dataclass
 class AttentionMetadata:
-    query_start_loc: torch.Tensor
-    seq_lens: torch.Tensor
+    query_start_loc: list[int]
+    seq_lens: list[int]
     block_table: torch.Tensor
     slot_mapping: torch.Tensor
-
+    rope_cos: torch.Tensor | None = None
+    rope_sin: torch.Tensor | None = None
 
 @dataclass
 class ForwardContext:

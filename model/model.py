@@ -13,6 +13,7 @@ class DecoderLayer(nn.Module):
         self.post_attention_layernorm = RMSNorm(config["hidden_size"], eps=config["rms_norm_eps"])
         self.mlp = MLP(config["hidden_size"], config["intermediate_size"])
 
+    @torch.cuda.nvtx.range("DecoderLayer")
     def forward(self, x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
         residual = x
         x = self.input_layernorm(x)

@@ -15,15 +15,20 @@ class RotaryEmbedding(nn.Module):
         self.head_dim = head_dim
         self.rope_theta = rope_theta
 
-    def forward(self, x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
-        positions = positions.to(device=x.device, dtype=torch.float32)
-        pair_indices = torch.arange(self.head_dim // 2, device=x.device, dtype=torch.float32)
+    @torch.cuda.nvtx.range("build_cos_sin")
+    def build_cos_sin(self, positions: torch.Tensor):
+        positions = positions.to(device=positions.device, dtype=torch.float32)
+        pair_indices = torch.arange(self.head_dim // 2, device=positions.device, dtype=torch.float32)
         inv_freq = self.rope_theta ** (-2 * pair_indices / self.head_dim)
 
         angles = positions[:, None] * inv_freq[None, :]
         cos = angles.cos()[:, None, :]
         sin = angles.sin()[:, None, :]
+        return cos, sin
 
+    @torch.cuda.nvtx.range("apply_RoPE")
+    def apply_rotary(self, x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor):
+        
         half = self.head_dim // 2
         a = x[..., :half].float()
         b = x[..., half:].float()
@@ -32,7 +37,6 @@ class RotaryEmbedding(nn.Module):
         rotated_b = a * sin + b * cos
 
         return torch.cat([rotated_a, rotated_b], dim=-1).to(x.dtype)
-
 
 class Attention(nn.Module):
     def __init__(self, config: dict, layer_id: int):
@@ -61,6 +65,7 @@ class Attention(nn.Module):
     def bind_kv_cache(self, kv_cache: torch.Tensor) -> None:
             self.kv_cache = kv_cache
 
+    @torch.cuda.nvtx.range("Attention")
     def forward(self, x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
         assert self.kv_cache is not None
         attn_metadata = get_forward_context().attn_metadata
@@ -82,8 +87,14 @@ class Attention(nn.Module):
         Q = self.q_norm(Q)
         K = self.k_norm(K)
 
-        Q = self.rope(Q, positions)
-        K = self.rope(K, positions)
+        if attn_metadata.rope_cos is None:
+            rope_cos, rope_sin = self.rope.build_cos_sin(positions)
+            attn_metadata.rope_cos = rope_cos
+            attn_metadata.rope_sin = rope_sin
+        cos = attn_metadata.rope_cos
+        sin = attn_metadata.rope_sin
+        Q = self.rope.apply_rotary(Q, cos, sin)
+        K = self.rope.apply_rotary(K, cos, sin)
 
         block_size = self.kv_cache.shape[2]
 
@@ -95,12 +106,12 @@ class Attention(nn.Module):
 
         output = torch.empty((N, self.num_heads * self.head_dim), dtype=Q.dtype, device=Q.device)
 
-        num_requests = seq_lens.shape[0]
+        num_requests = len(seq_lens)
 
         for i in range(num_requests):
-            query_start = query_start_loc[i].item()
-            query_end = query_start_loc[i + 1].item()
-            seq_len = seq_lens[i].item()
+            query_start = query_start_loc[i]
+            query_end = query_start_loc[i + 1]
+            seq_len = seq_lens[i]
 
             Q_i = Q[query_start:query_end]
             query_positions = positions[query_start:query_end]
@@ -133,4 +144,3 @@ class Attention(nn.Module):
             result = result.transpose(0, 1).reshape(query_end - query_start, self.num_heads * self.head_dim)
             output[query_start:query_end] = result
         return self.o_proj(output)
-             

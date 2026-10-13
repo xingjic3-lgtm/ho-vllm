@@ -80,8 +80,6 @@ class ModelRunner:
 
         input_ids = torch.tensor(input_ids, dtype=torch.long, device=self.device)
         positions = torch.tensor(positions, dtype=torch.long, device=self.device)
-        query_start_loc = torch.tensor(query_start_loc, dtype=torch.int32, device=self.device)
-        seq_lens = torch.tensor(seq_lens, dtype=torch.int32, device=self.device)
         block_table = torch.tensor(block_table, dtype=torch.int32, device=self.device)
         slot_mapping = torch.tensor(slot_mapping, dtype=torch.long, device=self.device)
         logits_indices = torch.tensor(logits_indices, dtype=torch.long, device=self.device)

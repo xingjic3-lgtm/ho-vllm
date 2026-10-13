@@ -11,6 +11,7 @@ class RMSNorm(nn.Module):
         self.weight = nn.Parameter(torch.ones(hidden_size))
         self.eps = eps
 
+    @torch.cuda.nvtx.range("RMSNorm")
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x32 = x.float()
         mean_square = x32.square().mean(dim=-1, keepdim=True)
@@ -25,6 +26,7 @@ class MLP(nn.Module):
         self.up_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
         self.down_proj = nn.Linear(intermediate_size, hidden_size, bias=False)
 
+    @torch.cuda.nvtx.range("MLP")
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         gate = self.gate_proj(x)
         up = self.up_proj(x)
