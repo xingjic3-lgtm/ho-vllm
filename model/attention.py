@@ -7,7 +7,7 @@ from torch.nn import functional as F
 
 from .layers import RMSNorm
 from ..forward_context import get_forward_context
-
+from .kernels.paged_gather_gqa import paged_gather_gqa
 
 class RotaryEmbedding(nn.Module):
     def __init__(self, head_dim: int, rope_theta: float = 1_000_000.0):
@@ -117,16 +117,16 @@ class Attention(nn.Module):
             query_positions = positions[query_start:query_end]
 
             kv_positions = torch.arange(seq_len, device=Q.device)
-            logical_block_ids = kv_positions // block_size
-            block_offsets = kv_positions % block_size
-            physical_block_ids = block_table[i, logical_block_ids].long()
 
-            K_cache = self.kv_cache[0, physical_block_ids, block_offsets]
-            V_cache = self.kv_cache[1, physical_block_ids, block_offsets]
-
-            repeat = self.num_heads // self.num_kv_heads
-            K_cache = K_cache.repeat_interleave(repeat, dim=1)
-            V_cache = V_cache.repeat_interleave(repeat, dim=1)
+            K_cache, V_cache = paged_gather_gqa(
+                    self.kv_cache,
+                    block_table[i],  # Only this request's logical-to-physical mapping.
+                    seq_len,
+                    self.num_heads,
+                    self.num_kv_heads,
+                    self.head_dim,
+                    block_size,
+                )
 
             Q_i = Q_i.transpose(0, 1)    # [head, query_len, head_dim]
             K_cache = K_cache.transpose(0, 1)   # [head, seq_len, head_dim]
