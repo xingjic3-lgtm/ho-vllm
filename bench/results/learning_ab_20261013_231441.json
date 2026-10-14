@@ -1,0 +1,269 @@
+{
+  "revisions": {
+    "rope": "219f826",
+    "triton": "5f1798efaf1135413386ea32ce49d273b2abbb93"
+  },
+  "torch": "2.8.0+cu128",
+  "gpu": "NVIDIA GeForce RTX 5060 Ti",
+  "prompts": [
+    "你好，请介绍一下自己。",
+    "2026年10月新闻"
+  ],
+  "warmups_per_version": 5,
+  "profiled": false,
+  "method": "same engine, exact committed Attention.forward, ABBA x3",
+  "outputs_equal": true,
+  "outputs": [
+    [
+      35946,
+      101909,
+      15469,
+      110498,
+      3837,
+      73670,
+      99553,
+      100364,
+      1773,
+      35946,
+      85106,
+      56568,
+      108965,
+      61443,
+      46944,
+      101888,
+      2073,
+      104455,
+      18493,
+      100182,
+      104799,
+      99892,
+      854,
+      99487,
+      100220,
+      9370,
+      100370,
+      3837,
+      100630,
+      116509
+    ],
+    [
+      82832,
+      271,
+      60396,
+      5122,
+      17,
+      15,
+      17,
+      21,
+      7948,
+      16,
+      15,
+      9754,
+      100014,
+      82832,
+      271,
+      110644,
+      5122,
+      17,
+      15,
+      17,
+      21,
+      7948,
+      16,
+      15,
+      9754,
+      3837,
+      101067,
+      99602,
+      9370,
+      99723
+    ]
+  ],
+  "runs": [
+    {
+      "version": "rope",
+      "seconds": 1.1292538100024103,
+      "input_tokens": [
+        5,
+        9
+      ],
+      "output_tokens": [
+        30,
+        30
+      ],
+      "peak_allocated_mib": 1593.65185546875
+    },
+    {
+      "version": "triton",
+      "seconds": 1.044807144004153,
+      "input_tokens": [
+        5,
+        9
+      ],
+      "output_tokens": [
+        30,
+        30
+      ],
+      "peak_allocated_mib": 1593.65185546875
+    },
+    {
+      "version": "triton",
+      "seconds": 1.0719429509990732,
+      "input_tokens": [
+        5,
+        9
+      ],
+      "output_tokens": [
+        30,
+        30
+      ],
+      "peak_allocated_mib": 1593.65185546875
+    },
+    {
+      "version": "rope",
+      "seconds": 1.4767079309967812,
+      "input_tokens": [
+        5,
+        9
+      ],
+      "output_tokens": [
+        30,
+        30
+      ],
+      "peak_allocated_mib": 1593.65185546875
+    },
+    {
+      "version": "rope",
+      "seconds": 1.4197645470048883,
+      "input_tokens": [
+        5,
+        9
+      ],
+      "output_tokens": [
+        30,
+        30
+      ],
+      "peak_allocated_mib": 1593.65185546875
+    },
+    {
+      "version": "triton",
+      "seconds": 1.0404631299970788,
+      "input_tokens": [
+        5,
+        9
+      ],
+      "output_tokens": [
+        30,
+        30
+      ],
+      "peak_allocated_mib": 1593.65185546875
+    },
+    {
+      "version": "triton",
+      "seconds": 1.0714634700052557,
+      "input_tokens": [
+        5,
+        9
+      ],
+      "output_tokens": [
+        30,
+        30
+      ],
+      "peak_allocated_mib": 1593.65185546875
+    },
+    {
+      "version": "rope",
+      "seconds": 1.2147988150027231,
+      "input_tokens": [
+        5,
+        9
+      ],
+      "output_tokens": [
+        30,
+        30
+      ],
+      "peak_allocated_mib": 1593.65185546875
+    },
+    {
+      "version": "rope",
+      "seconds": 1.3530963839948527,
+      "input_tokens": [
+        5,
+        9
+      ],
+      "output_tokens": [
+        30,
+        30
+      ],
+      "peak_allocated_mib": 1593.65185546875
+    },
+    {
+      "version": "triton",
+      "seconds": 1.0856310029994347,
+      "input_tokens": [
+        5,
+        9
+      ],
+      "output_tokens": [
+        30,
+        30
+      ],
+      "peak_allocated_mib": 1593.65185546875
+    },
+    {
+      "version": "triton",
+      "seconds": 1.0374343840012443,
+      "input_tokens": [
+        5,
+        9
+      ],
+      "output_tokens": [
+        30,
+        30
+      ],
+      "peak_allocated_mib": 1593.65185546875
+    },
+    {
+      "version": "rope",
+      "seconds": 1.1743678150014603,
+      "input_tokens": [
+        5,
+        9
+      ],
+      "output_tokens": [
+        30,
+        30
+      ],
+      "peak_allocated_mib": 1593.65185546875
+    }
+  ],
+  "summary": {
+    "rope": {
+      "median_s": 1.283947599498788,
+      "min_s": 1.1292538100024103,
+      "max_s": 1.4767079309967812,
+      "runs_s": [
+        1.1292538100024103,
+        1.4767079309967812,
+        1.4197645470048883,
+        1.2147988150027231,
+        1.3530963839948527,
+        1.1743678150014603
+      ]
+    },
+    "triton": {
+      "median_s": 1.0581353070047044,
+      "min_s": 1.0374343840012443,
+      "max_s": 1.0856310029994347,
+      "runs_s": [
+        1.044807144004153,
+        1.0719429509990732,
+        1.0404631299970788,
+        1.0714634700052557,
+        1.0856310029994347,
+        1.0374343840012443
+      ]
+    }
+  },
+  "speedup": 1.213405876355546
+}
