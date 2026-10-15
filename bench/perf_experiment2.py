@@ -79,18 +79,6 @@ def main():
         )
 
 
-    # torch.cuda.synchronize() 
-    # torch.cuda.cudart().cudaProfilerStart()
-    # torch.cuda.nvtx.range_push("profile2")
-    # start = time.perf_counter()
-    # engine.run()
-    # torch.cuda.synchronize()
-    # end = time.perf_counter()
-    # torch.cuda.nvtx.range_pop()
-    # torch.cuda.cudart().cudaProfilerStop()
-    # elapsed = end-start
-
-    # print(f"耗时：{elapsed:.3f} s")
 
 def create_synthetic_request(
     vocab_size,
