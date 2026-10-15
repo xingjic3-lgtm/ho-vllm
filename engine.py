@@ -64,6 +64,27 @@ class Engine:
 
         return request
 
+    def add_request_tokens(
+        self,
+        prompt_token_ids,
+        sampling_params: SamplingParams,
+    ) -> Request:
+
+        if isinstance(prompt_token_ids, torch.Tensor):
+            prompt_token_ids = prompt_token_ids.tolist()
+
+        request = Request(
+            request_id=self.next_request_id,
+            prompt_token_ids=prompt_token_ids,
+            sampling_params=sampling_params,
+        )
+
+        self.next_request_id += 1
+        self.scheduler.add_request(request)
+
+        return request
+
+
     def run(self) -> None:
         while self.scheduler.waiting or self.scheduler.running:
             self.step()

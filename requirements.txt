@@ -1,0 +1,4 @@
+# Install CUDA-enabled torch 2.8.0 separately (see README).
+triton==3.4.0
+transformers==4.57.6
+safetensors==0.8.0
